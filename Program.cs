@@ -5,10 +5,9 @@ namespace TbAutoHideSwitcher
 {
     internal static class Program
     {
-        private const int ABS_ALWAYSONTOP = 0x02;
-        private const int ABS_AUTOHIDE = 0x01;
-        private const int ABM_GETSTATE = 0x04;
-        private const int ABM_SETSTATE = 0xA;
+        // Import the SHAppBarMessage call from shell32.dll
+        [DllImport("SHELL32", CallingConvention = CallingConvention.StdCall)]
+        private static extern AppBarState SHAppBarMessage(AppBarMessage dwMessage, ref APPBARDATA pData);
 
         /// <summary>
         ///     The main entry point for the application.
@@ -16,56 +15,49 @@ namespace TbAutoHideSwitcher
         [STAThread]
         private static void Main()
         {
-            AutoHideAutoSwitch();
+            // Initiate the cbSize member (the only required parameter)
+            // and get the current Taskbar state
+            APPBARDATA abData = new APPBARDATA() { cbSize = Marshal.SizeOf(typeof(APPBARDATA)) };
+            AppBarState currentState = SHAppBarMessage(AppBarMessage.GetState, ref abData);
+
+            // Toggle the auto-hide state of the Taskbar and set it
+            // NOTE: Starting with Windows 7 ABS_ALWAYSONTOP is no longer returned,
+            // so we set it regardless of its current state
+            abData.lParam = (IntPtr) (AppBarState.AlwaysOnTop | currentState ^ AppBarState.AutoHide);
+            SHAppBarMessage(AppBarMessage.SetState, ref abData);
         }
 
-        // Import the SHAppBarMessage call from shell32.dll
-        [DllImport("SHELL32", CallingConvention = CallingConvention.StdCall)]
-        private static extern uint SHAppBarMessage(int dwMessage, ref APPBARDATA pData);
-
-        private static void AutoHideAutoSwitch()
+        private enum AppBarMessage : uint
         {
-            APPBARDATA abData = new APPBARDATA();
-            // Initiate the cbSize member (which is a required parameter)
-            abData.cbSize = Marshal.SizeOf(abData);
-            // Find out what should be the new state of the Taskbar
-            int tbNewState = SwitchTaskbarVisibilityState(abData);
-            // Set the lParam to the new state
-            abData.lParam = (IntPtr) tbNewState;
-            // Call SHAppBarMessage with ABM_SETSTATE to set the new Taskbar state
-            SHAppBarMessage(ABM_SETSTATE, ref abData);
+            GetState = 0x4,
+            SetState = 0xA
         }
 
-        private static int SwitchTaskbarVisibilityState(APPBARDATA pData)
+        [Flags]
+        private enum AppBarState : uint
         {
-            int tbCurrentState = (int) SHAppBarMessage(ABM_GETSTATE, ref pData);
-            int tbNewState = ABS_ALWAYSONTOP;
-            /* Since ABM_GETSTATE can return both, either, or neither of ABS_ALWAYSONTOP and ABS_AUTOHIDE,
-            * we should check if the returned value is even (which means that it doesn't include ABS_AUTOHIDE).
-            * NOTE: Starting with Windows 7, ABS_ALWAYSONTOP is no longer returned */
-            if (tbCurrentState % ABS_ALWAYSONTOP == 0)
-                tbNewState += ABS_AUTOHIDE;
-            return tbNewState;
+            AutoHide = 1,
+            AlwaysOnTop = 2
         }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct APPBARDATA
         {
-            public int cbSize;
+            public int    cbSize;
             public IntPtr hWnd;
-            public int uCallbackMessage;
-            public int uEdge;
-            public RECT rc;
+            public uint   uCallbackMessage;
+            public uint   uEdge;
+            public RECT   rc;
             public IntPtr lParam;
         }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct RECT
         {
-            public int left;
-            public int top;
-            public int right;
-            public int bottom;
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
         }
     }
 }
